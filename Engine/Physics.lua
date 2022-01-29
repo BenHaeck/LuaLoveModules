@@ -1,5 +1,4 @@
 
-
 local Physics = {dragMult = 10}
 
 --local Physics.SDims = {x = "w", y = "h"}
@@ -15,8 +14,8 @@ function Physics.Drag (vel, drag, dt)
 	return vel * ((1 - drag)^(dt * Physics.dragMult));
 end
 
-function Physics.MoveTowards (vel, tarPhysicst, chanPhysicsInSpeed, dt)
-	return Physics.Drag (vel - tarPhysicst, chanPhysicsInSpeed, dt) + tarPhysicst;
+function Physics.MoveTowards (vel, tarPhysicst, changeInSpeed, dt)
+	return Physics.Drag (vel - tarPhysicst, changeInSpeed, dt) + tarPhysicst;
 end
 
 function Physics.MakeCollider (x,y,w,h, self)
@@ -29,7 +28,7 @@ function Physics.MakeCollider (x,y,w,h, self)
 	self.w = w;
 	self.h = h;
 
-	function self:Collide (coll, dim)
+	function self:collide (coll, dim)
 		local success = Physics.Collide1D (self.x, self.w, coll.x, coll.w) and Physics.Collide1D (self.y, self.h, coll.y, coll.h);
 		if not success then return false; end
 		if dim == "x" then

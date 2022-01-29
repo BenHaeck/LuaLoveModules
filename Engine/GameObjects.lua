@@ -1,10 +1,15 @@
 local GOLib = {};
 
 local Physics = require ("Engine/Physics");
+local Logger = require ("Engine/Logger");
+local Rendering = require ("Engine/Rendering");
+local LevelLoader = require ("Engine/LevelLoader");
 
-function GOLib.MakeGameObject (x,y,w,h, self)
+function GOLib.MakeGameObject (x,y,w,h, name, self)
 	if self == nil then self = {}; end
 	self.collider = Physics.MakeCollider(x,y,w,h,nil);
+
+	self.name = name;
 
 	self.visible = true;
 	self.enabled = true;
@@ -12,6 +17,8 @@ function GOLib.MakeGameObject (x,y,w,h, self)
 	self.motionX = 0;
 	self.motionY = 0;
 
+	self.collidedx = false;
+	self.collidedy = false;
 
 
 	function self:start (scene, x, y)end
@@ -40,11 +47,19 @@ function GOLib.MakeGameObject (x,y,w,h, self)
 		if renderer.quad ~= nil then 
 			local collider = self.collider;
 			local qx,qy,qw,qh = self.renderer.quad:getViewport();
-			spriteBatch:set(renderer.sbIndex, renderer.quad, collider.x + renderer.offsetx, collider.y + renderer.offsety, renderer.rotation, renderer.w, renderer.h, qw*0.5, qh*0.5);
+			local drx,dry,drw,drh = Rendering.camera:WorldToScreen(
+				collider.x + renderer.offsetx, collider.y + renderer.offsety,
+				renderer.w, renderer.h
+			)
+			spriteBatch:set(renderer.sbIndex, renderer.quad, drx, dry, renderer.rotation, drw, drh, qw*0.5, qh*0.5);
 		else
 			local collider = self.collider;
 			local tw, th = spriteBatch:getTexture():getDimensions();
-			spriteBatch:set(renderer.sbIndex, collider.x + renderer.offsetx, collider.y + renderer.offsety, renderer.rotation, renderer.w, renderer.h, tw*0.5, th*0.5);
+			local drx,dry,drw,drh = Rendering.camera:WorldToScreen(
+				collider.x + renderer.offsetx, collider.y + renderer.offsety,
+				renderer.w, renderer.h
+			)
+			spriteBatch:set(renderer.sbIndex, drx, dry, renderer.rotation, drw, drh, tw*0.5, th*0.5);
 		end
 	end
 
@@ -65,7 +80,7 @@ function GOLib.MakeGameObject (x,y,w,h, self)
 	function self:onRemove ()end
 
 	function self:collide (obj, dim)
-		if self.collider:Collide (obj.collider, dim) then
+		if self.collider:collide (obj.collider, dim) then
 			self:onCollision (obj);
 			obj:onCollision (self);
 			return true;
@@ -112,44 +127,85 @@ function GOLib.MakeObjectGroup (image,self)
 	end
 	
 	self.static = false;
-	self.chunkDividers = nil;
 	self.chunks = nil;
 
-	function self:generateChunks ()
-		if self.chunkDividers ~= nil then
-
-		end
+	
+	
+	function self:start (scene)
+		if self.static then self:formatChunks() end 
 	end
 	
-
-	function self:start (scene)
-
-	end
-
 	function self:add (v)
 		table.insert(self.objs, v);
 	end
-
+	
 	function self:remove (i)
 		self.objs[i].onRemove();
 		table.remove (self.objs, i);
 		self:RefreshSpriteBatch();
 	end
 
+	function self:getObjectWithName (name)
+		for i,v in pairs (self.objs) do
+			if v.name ~= nil then
+				if v.name == name then return v; end
+			end
+		end
+	end
+	
 	function self:clear ()
 		for i,v in ipairs(self.objs) do 
 			v:onRemove()
 		end
 		self.objs = {}
 	end
+	
+	function self:formatChunks (showChunkInfo)
+		if showChunkInfo == nil then showChunkInfo = false; end
+		if self.chunks ~= nil then
+			for ci,cv in ipairs(self.chunks) do
+				cv.objs = {};
+				if cv.area ~= nil then
+					for oi, ov in ipairs(self.objs) do
+						if ov.collider:collide (cv.area) then
+							table.insert(cv.objs,ov);
+							if showChunkInfo then Logger.log(
+								"object at {" .. tostring(ov.collider.x).. ", "..
+								tostring(ov.collider.y) .. "} added to " .. ci
+							); end
+						end
+					end
+				else
+					Logger.log ("area " .. ci .. " is nil");
+
+				end
+			end
+		else
+			Logger.log("Chunks are null");
+		end
+	end
 
 	function self:collide (coll,dim)
 		local collided = false;
-		for i,v in ipairs(self.objs) do
-			if coll:collide(v,dim) then
-				collided = true;
+		if (not self.static) --[[or self.chunks == nil--]] then
+			for i,v in ipairs(self.objs) do
+				if coll:collide(v,dim) then
+					collided = true;
+				end
+			end 
+		else
+			for oi,ov in ipairs(self.chunks) do
+				--Logger.log (tostring (oi) .. tostring(#ov.objs))
+				--local numberOfHits = 0;
+				if coll.collider:collide(ov.area) then
+					--numberOfHits = numberOfHits + 1;
+					for ii, iv in ipairs(ov.objs) do
+						if coll:collide (iv,dim) then collided = true; end
+					end
+				end
+				--Logger.log ("hits " .. numberOfHits .. "")
 			end
-		end 
+		end
 		return collided;
 	end
 
@@ -186,12 +242,16 @@ function GOLib.MakeScene (self)
 
 	self.groupOrder = {}
 
-
+	self.objectPositionChanger = nil
+	function self:LoadLevel (path)
+		LevelLoader.LoadLevel(path, self, self.objectPositionChanger);
+		self:init ();
+	end
 
 	function self:init ()
 		if self.start ~= nil then self:start(); end
 		local groups = self.groups;
-		for i,v in self.groupOrder do
+		for i,v in ipairs(self.groupOrder) do
 			groups[v]:start(self);
 		end
 	end
@@ -210,6 +270,26 @@ function GOLib.MakeScene (self)
 			self.groups[v]:update(self,dt);
 		end
 		if self.postUpdate ~= nil then self:postUpdate(dt); end
+
+		for i1,v1 in ipairs (self.groupOrder) do
+			local gr1 = self.groups[v1]
+			--Logger.log ("ss");
+			if gr1.static then
+				for i2, v2 in ipairs (self.groupOrder) do
+					local gr2 = self.groups[v2];
+					if (not gr2.static) then 
+						for oi, ov in ipairs (gr2.objs) do
+							local ovcoll = ov.collider;
+							ovcoll.x = ovcoll.x + (ov.motionX * dt);
+							ov.collidedx = gr1:collide (ov, "x");
+
+							ovcoll.y = ovcoll.y + (ov.motionY * dt);
+							ov.collidedy = gr1:collide (ov, "y");
+						end
+					end
+				end
+			end
+		end
 	end
 
 	function self:draw (dt)

@@ -14,6 +14,7 @@ local function ReadFile (flpath)
 	end
 end
 
+-- Warning probably unsafe
 function LevelLoader.LoadLevel (path, scene, trf)
 	Logger.log ("loading Level: "..path);
 	local res, success = ReadFile(path);
